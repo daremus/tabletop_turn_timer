@@ -1,10 +1,11 @@
-This is a single duration turn timer for tabletop games. Like an hourglass without the slow reset.
+This is a single duration turn timer for tabletop games. It's like an hourglass without the slow reset.
 
-![](timer_with_enclosure.jpg)
+<img src="timer_with_enclosure.jpg" width="300">
+
+## Basic Usage
 
 Everyone has the same time for each turn. The timer resets to that time after every turn.
 
-Usage
 1. Turn on
 2. Select a duration for turns
 3. when the first player is ready to play, press the button
@@ -15,13 +16,19 @@ Usage
 9. LEDs indicate the remaining duration
   Initial logic:
 
-  |color|pin|min time remaining|max time remaining|
+  |pin|original color|min time remaining|max time remaining|
   |---|---|---|---|
-  |blue|2|5/6*duration|1*duration|
-  |green|3|4/6*duration|5/6*duration|
-  |yellow|4|3/6*duration|4/6*duration|
-  |orange|5|2/6*duration|3/6*duration|
-  |red|6|1/6*duration|2/6*duration|
-  |flashing red|6|0|1/6*duration|
+  |2|blue|5/6*duration|1*duration|
+  |3|green|4/6*duration|5/6*duration|
+  |4|yellow|3/6*duration|4/6*duration|
+  |5|orange|2/6*duration|3/6*duration|
+  |6|red|1/6*duration|2/6*duration|
+  |6|red (flashing)|0|1/6*duration|
 
-Wiring schematic: ![](timer_schematic.png)
+## Details
+* Wiring schematic: ![](timer_schematic.png)
+* The TS jacks are for external buttons
+  
+## Notes
+* nice button: https://www.sparkfun.com/16mm-metal-push-button-switch-mushroom-head-red.html
+* 
