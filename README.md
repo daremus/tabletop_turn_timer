@@ -1,4 +1,6 @@
-A tabletop timer for games where each player has a specific amount of time every turn.
+This is a single duration turn timer for tabletop games. Like an hourglass without the slow reset.
+
+![](timer_with_enclosure.jpg)
 
 Everyone has the same time for each turn. The timer resets to that time after every turn.
 
@@ -23,5 +25,3 @@ Usage
   |flashing red|6|0|1/6*duration|
 
 Wiring schematic: ![](timer_schematic.png)
-
-Enclosure: ![](timer_with_enclosure.jpg)
