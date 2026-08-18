@@ -12,13 +12,14 @@ Usage
 8. double press the button to pause, tap again to start the next turn
 9. LEDs indicate the remaining duration
   Initial logic:
+
   |color|pin|min time remaining|max time remaining|
   |---|---|---|---|
-  |blue|2|5/6 * duration|1*duration|
-  |green|3|4/6 * duration|5/6*duration|
-  |yellow|4|3/6 * duration|4/6*duration|
-  |orange|5|2/6 * duration|3/6*duration|
-  |red|6|1/6 * duration|2/6*duration|
+  |blue|2|5/6*duration|1*duration|
+  |green|3|4/6*duration|5/6*duration|
+  |yellow|4|3/6*duration|4/6*duration|
+  |orange|5|2/6*duration|3/6*duration|
+  |red|6|1/6*duration|2/6*duration|
   |flashing red|6|0|1/6*duration|
 
 Wiring schematic: ![](timer_schematic.png)
