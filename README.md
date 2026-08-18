@@ -1,5 +1,7 @@
 This is a single duration turn timer for tabletop games. It's like an hourglass without the slow reset.
 
+The code is 99% the work of Gemini.
+
 <img src="timer_with_enclosure.jpg" width="300">
 
 ## Basic Usage
