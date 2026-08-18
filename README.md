@@ -21,6 +21,6 @@ Usage
   |red|6|1/6 * duration|2/6*duration|
   |flashing red|6|0|1/6*duration|
 
-Wiring schematic: 
+Wiring schematic: [timer_schematic.pdf]
 
-Enclosure: 
+Enclosure: !(timer_with_enclosure.jpg)
