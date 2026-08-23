@@ -21,7 +21,7 @@ Everyone has the same time for each turn. The timer resets to that time after ev
   Initial logic:
 
   |pin|original color|min time remaining for 1min setting|min time remaining|max time remaining|
-  |---|---|---|---|
+  |---|---|---|---|---|
   |2|blue|50s|5/6*duration|1*duration|
   |3|green|40s|4/6*duration|5/6*duration|
   |4|yellow|30s|3/6*duration|4/6*duration|
