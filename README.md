@@ -20,14 +20,14 @@ Everyone has the same time for each turn. The timer resets to that time after ev
 9. LEDs indicate the remaining duration
   Initial logic:
 
-  |pin|original color|min time remaining|max time remaining|
+  |pin|original color|min time remaining for 1min setting|min time remaining|max time remaining|
   |---|---|---|---|
-  |2|blue|5/6*duration|1*duration|
-  |3|green|4/6*duration|5/6*duration|
-  |4|yellow|3/6*duration|4/6*duration|
-  |5|orange|2/6*duration|3/6*duration|
-  |6|red|1/6*duration|2/6*duration|
-  |6|red (flashing)|0|1/6*duration|
+  |2|blue|50s|5/6*duration|1*duration|
+  |3|green|40s|4/6*duration|5/6*duration|
+  |4|yellow|30s|3/6*duration|4/6*duration|
+  |5|orange|20s|2/6*duration|3/6*duration|
+  |6|red|10s|1/6*duration|2/6*duration|
+  |6|red (flashing)|0s|0|1/6*duration|
 
 ## Details
 * Wiring schematic: ![](timer_schematic.png)
