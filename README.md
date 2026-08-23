@@ -2,7 +2,7 @@ This is a single duration turn timer for tabletop games. It's like an hourglass 
 
 Attribution:
 * Code: 99% Gemini.
-* Physical: 99% me.
+* Everything else: 99% me.
 
 <img src="timer_with_enclosure.jpg" width="300">
 
@@ -33,6 +33,13 @@ Everyone has the same time for each turn. The timer resets to that time after ev
 * Wiring schematic: ![](timer_schematic.png)
 * The TS jacks are for external buttons
   
-## Notes
-* nice button: https://www.sparkfun.com/16mm-metal-push-button-switch-mushroom-head-red.html
-* 
+## Components
+* Panel mount mushroom head buttons: [22mm](https://www.amazon.com/dp/B0CKV6B81P), [16mm (1)](https://www.sparkfun.com/16mm-metal-push-button-switch-mushroom-head-red.html), [16mm (2)](https://www.amazon.com/dp/B0FM3VK8YW)
+* [Arduino Nano clone](https://www.amazon.com/dp/B0F6Y7GS4Q) / [Arduino Nano Every](
+* [3.5mm mono jacks](https://www.amazon.com/dp/B0CF9DQYQ6)
+* [Buzzer/mini speaker](https://www.sparkfun.com/mini-speaker-pc-mount-12mm-2-048khz.html)
+* [Battery holder](https://www.sparkfun.com/battery-holder-3xaa-with-cover-and-switch-bare-wire.html) - switch removed.
+* [LED holders](https://www.sparkfun.com/led-holder-5mm-chrome-finish.html)
+* M2 x 4mm [heat set threaded inserts](https://www.amazon.com/dp/B0FD7DQS8Y)
+* M2 x 5mm screws
+* [Solderable breadboard](https://www.amazon.com/dp/B0B27XB69M)
