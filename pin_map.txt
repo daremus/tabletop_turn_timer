@@ -1,0 +1,33 @@
+a0 switch 8
+a1 red led
+a2 buzzer
+a3 main button
+a4 remote buttons
+a5 
+a6 
+a7  
+
+d2 switch 1
+d3 switch 2
+d4 switch 3
+d5 switch 4
+d6 switch 5
+d7 switch 6
+d8 switch 7
+d9 N/A
+d10 blue led
+d11 green led 
+d12 yellow led
+d13 orange led
+
+
+1. red led
+2. test buzzer
+3. rewire
+
+
+
+
+
+
+
