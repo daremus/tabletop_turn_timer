@@ -21,11 +21,6 @@ d11 green led
 d12 yellow led
 d13 orange led
 
-TODO:
-1. red led
-2. test buzzer
-3. rewire
-
 
 
 

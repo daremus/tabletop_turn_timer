@@ -15,24 +15,24 @@ const unsigned long DURATION_PRESETS_MS[] = {
   30000UL    // Pos 8: 30 sec
 };
 
-// 4 Remote Player Audio Jacks (J1, J2, J3, J4)
-const int JACK_PINS[] = {10, 11, 12, 13};
-const int NUM_JACKS = 4;
+// 2 Remote Player Audio Jacks (originally each is wired with two jacks in parallel)
+const int JACK_PINS[] = {A3, A4};
+const int NUM_JACKS = 2;
 
 // Main Enclosure Pushbutton (SW2)
-const int MAIN_BUTTON_PIN = A1;
+const int MAIN_BUTTON_PIN = A2;
 
-// Piezo Buzzer (BZ1)
-const int BUZZER_PIN = A2;
+// Active Buzzer (BZ1)
+const int BUZZER_PIN = A1;
 
 // 5 LEDs (LED1 to LED5)
-const int LED_PINS[] = {A3, A4, A5, A6, A7};
+const int LED_PINS[] = {10, 11, 12, 13, A0};
 const int NUM_LEDS = 5;
 
 // ==========================================
 // STATE MACHINE & TIMING VARIABLES
 // ==========================================
-enum TimerState { IDLE, RUNNING, PAUSED, ALARM };
+enum TimerState { IDLE, RUNNING, STOPPING, ALARM };
 TimerState currentState = IDLE;
 
 unsigned long totalTimerDurationMs = 60000UL;
@@ -40,11 +40,18 @@ unsigned long timeRemainingMs = 60000UL;
 unsigned long lastUpdateMillis = 0;
 unsigned long lastBeepMillis = 0;
 
-// Alarm Beeper Logic (3 Tones)
+// Alarm Beeper Logic (3 Beeps via DC pulse)
 int beepCount = 0;
 bool beepActive = false;
 const int MAX_BEEPS = 3;
 const unsigned long BEEP_DURATION_MS = 200;
+
+// Double-Tap Stop & LED Flash Tracking
+int flashTargetLED = 0;
+int flashToggleCount = 0;
+bool flashLEDState = false;
+unsigned long lastFlashMillis = 0;
+const unsigned long FLASH_HALF_PERIOD_MS = 150; // 150ms ON, 150ms OFF
 
 // Button Debouncing & Double-Tap Logic (Main Button SW2)
 const unsigned long DEBOUNCE_DELAY = 50;
@@ -57,9 +64,9 @@ unsigned long lastReleaseTime = 0;
 int tapCount = 0;
 
 // Remote Audio Jack Debounce States
-bool lastJackState[NUM_JACKS] = {HIGH, HIGH, HIGH, HIGH};
-bool stableJackState[NUM_JACKS] = {HIGH, HIGH, HIGH, HIGH};
-unsigned long lastJackDebounce[NUM_JACKS] = {0, 0, 0, 0};
+bool lastJackState[NUM_JACKS] = {HIGH, HIGH};
+bool stableJackState[NUM_JACKS] = {HIGH, HIGH};
+unsigned long lastJackDebounce[NUM_JACKS] = {0, 0};
 
 // ==========================================
 // SETUP
@@ -78,6 +85,8 @@ void setup() {
   // Initialize Main Button, Buzzer, and LEDs
   pinMode(MAIN_BUTTON_PIN, INPUT_PULLUP);
   pinMode(BUZZER_PIN, OUTPUT);
+  digitalWrite(BUZZER_PIN, LOW);
+
   for (int i = 0; i < NUM_LEDS; i++) {
     pinMode(LED_PINS[i], OUTPUT);
   }
@@ -112,23 +121,39 @@ unsigned long readSelectedDuration() {
 }
 
 // ==========================================
-// TIMER START / RESET / PAUSE LOGIC
+// TIMER START / RESET / STOP LOGIC
 // ==========================================
 void startOrResetTimer() {
-  noTone(BUZZER_PIN);
+  digitalWrite(BUZZER_PIN, LOW); // Silence active buzzer
   totalTimerDurationMs = readSelectedDuration(); // Update to current rotary setting
   timeRemainingMs = totalTimerDurationMs;
   lastUpdateMillis = millis();
   currentState = RUNNING;
 }
 
-void togglePause() {
+void triggerStopSequence() {
   if (currentState == RUNNING) {
-    currentState = PAUSED;
-  } else if (currentState == PAUSED) {
-    lastUpdateMillis = millis();
-    currentState = RUNNING;
+    // Determine which LED is currently active based on elapsed time
+    unsigned long elapsedMs = totalTimerDurationMs - timeRemainingMs;
+    unsigned long stageDurationMs = totalTimerDurationMs / 5;
+    flashTargetLED = elapsedMs / stageDurationMs;
+    if (flashTargetLED >= NUM_LEDS) flashTargetLED = NUM_LEDS - 1;
+  } else {
+    flashTargetLED = 0;
   }
+
+  // Turn off buzzer and clear all other LEDs
+  digitalWrite(BUZZER_PIN, LOW);
+  for (int i = 0; i < NUM_LEDS; i++) {
+    digitalWrite(LED_PINS[i], LOW);
+  }
+
+  // Prime the 10-flash sequence (20 toggles: 10 ON, 10 OFF)
+  flashToggleCount = 0;
+  flashLEDState = true;
+  digitalWrite(LED_PINS[flashTargetLED], HIGH);
+  lastFlashMillis = millis();
+  currentState = STOPPING;
 }
 
 // ==========================================
@@ -159,7 +184,7 @@ void handleMainButton() {
   // Handle single vs double tap
   if (tapCount > 0) {
     if (tapCount == 2) {
-      togglePause();
+      triggerStopSequence();
       tapCount = 0;
     } else if (millis() - lastReleaseTime > DOUBLE_TAP_GAP) {
       startOrResetTimer();
@@ -215,6 +240,25 @@ void updateTimer() {
 // 5-STAGE PROGRESS & BLINK LOGIC
 // ==========================================
 void updateLEDs() {
+  // Flash current LED 10 times then enter IDLE
+  if (currentState == STOPPING) {
+    unsigned long currentMillis = millis();
+    if (currentMillis - lastFlashMillis >= FLASH_HALF_PERIOD_MS) {
+      lastFlashMillis = currentMillis;
+      flashToggleCount++;
+
+      if (flashToggleCount >= 20) { // 20 toggles = exactly 10 full flashes
+        digitalWrite(LED_PINS[flashTargetLED], LOW);
+        currentState = IDLE;
+        return;
+      }
+
+      flashLEDState = !flashLEDState;
+      digitalWrite(LED_PINS[flashTargetLED], flashLEDState ? HIGH : LOW);
+    }
+    return;
+  }
+
   if (currentState == IDLE || currentState == ALARM) {
     for (int i = 0; i < NUM_LEDS; i++) {
       digitalWrite(LED_PINS[i], LOW);
@@ -252,13 +296,13 @@ void updateLEDs() {
 }
 
 // ==========================================
-// ALARM SOUND LOGIC (3 Tones)
+// ALARM SOUND LOGIC (Active DC Buzzer)
 // ==========================================
 void updateAlarm() {
   if (currentState != ALARM) return;
 
   if (beepCount >= MAX_BEEPS) {
-    noTone(BUZZER_PIN);
+    digitalWrite(BUZZER_PIN, LOW);
     return;
   }
 
@@ -268,9 +312,9 @@ void updateAlarm() {
     beepActive = !beepActive;
 
     if (beepActive) {
-      tone(BUZZER_PIN, 1000); // 1 kHz beep tone
+      digitalWrite(BUZZER_PIN, HIGH); // DC High to turn active buzzer ON
     } else {
-      noTone(BUZZER_PIN);
+      digitalWrite(BUZZER_PIN, LOW);  // DC Low to turn active buzzer OFF
       beepCount++;
     }
   }

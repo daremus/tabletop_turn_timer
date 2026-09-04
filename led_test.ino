@@ -2,7 +2,7 @@
 // 5-LED DIAGNOSTIC TEST SKETCH (Pins A1 - A5)
 // ==========================================
 
-const int LED_PINS[] = {A1, A2, A3, A4, A5};
+const int LED_PINS[] = {10, 11, 12, 13, A0};
 const int NUM_LEDS = 5;
 
 void setup() {
