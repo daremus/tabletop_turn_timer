@@ -27,7 +27,7 @@ Everyone has the same time for each turn. The timer resets to that time after ev
 * Panel mount mushroom head buttons: [22mm](https://www.amazon.com/dp/B0CKV6B81P), [16mm (1)](https://www.sparkfun.com/16mm-metal-push-button-switch-mushroom-head-red.html), [16mm (2)](https://www.amazon.com/dp/B0FM3VK8YW)
 * [Arduino Nano clone](https://www.amazon.com/dp/B0F6Y7GS4Q) / [Arduino Nano Every](https://www.sparkfun.com/arduino-nano-every.html)
 * [3.5mm mono jacks](https://www.amazon.com/dp/B0CF9DQYQ6)
-* [Buzzer](https://www.amazon.com/dp/B07VK1GJ9X)/[mini speaker](https://www.sparkfun.com/mini-speaker-pc-mount-12mm-2-048khz.html)
+* [mini speaker](https://www.amazon.com/dp/B0D7SC3ZFG)/[Buzzer](https://www.amazon.com/dp/B07VK1GJ9X)
 * [Battery holder](https://www.sparkfun.com/battery-holder-3xaa-with-cover-and-switch-bare-wire.html) - switch removed and replaced with something like [this one](https://www.sparkfun.com/mini-power-switch-spdt.html) glued to the enclosure.
 * [LED holders](https://www.sparkfun.com/led-holder-5mm-chrome-finish.html)
 * M2 x 4mm [heat set threaded inserts](https://www.amazon.com/dp/B0FD7DQS8Y)

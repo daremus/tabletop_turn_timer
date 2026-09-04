@@ -1,206 +1,258 @@
+/*
+  Tabletop Game Timer
+  
+  Turn-based countdown timer configured with an 8-position rotary switch,
+  remote player jacks, main button, passive piezo sounder (B0D7SC3ZFG),
+  and a 5-LED display.
+*/
+
 // ==========================================
 // PIN DEFINITIONS
 // ==========================================
+const uint8_t rotaryPins[] = {2, 3, 4, 5, 6, 7, 8, 9};
+const uint8_t numRotaryPositions = sizeof(rotaryPins) / sizeof(rotaryPins[0]);
 
-// Rotary Switch Positions 1 through 8
-const int ROTARY_PINS[] = {2, 3, 4, 5, 6, 7, 8, 9};
-const int NUM_ROTARY_POSITIONS = 8;
+const uint8_t jackPins[] = {A3, A4};
+const uint8_t numJacks = sizeof(jackPins) / sizeof(jackPins[0]);
 
-// Durations matching positions 1 to 8:
-// 1m, 2m, 3m, 5m, 10m, 15m, 15s, 30s
-const unsigned long DURATION_PRESETS_MS[] = {
-  60000UL,   // Pos 1: 1 min
-  120000UL,  // Pos 2: 2 min
-  180000UL,  // Pos 3: 3 min
-  300000UL,  // Pos 4: 5 min
-  600000UL,  // Pos 5: 10 min
-  900000UL,  // Pos 6: 15 min
-  15000UL,   // Pos 7: 15 sec
-  30000UL    // Pos 8: 30 sec
+const uint8_t mainButtonPin = A2;
+const uint8_t buzzerPin = A1; // Passive Piezo Sounder (B0D7SC3ZFG)
+
+// LED Pins: LED1 = D10 (PWM), LED2 = D11 (PWM), LED3 = D12, LED4 = D13, LED5 = A0
+const uint8_t ledPins[] = {10, 11, 12, 13, A0};
+const uint8_t numLeds = sizeof(ledPins) / sizeof(ledPins[0]);
+
+// ==========================================
+// CONFIGURATION & PRESETS
+// ==========================================
+// Durations for Positions 1 to 8: 1m, 2m, 3m, 5m, 10m, 15m, 15s, 30s
+const uint32_t durationPresetsMs[] = {
+  60000UL, 120000UL, 180000UL, 300000UL,
+  600000UL, 900000UL, 15000UL, 30000UL
 };
 
-// 2 Remote Player Audio Jacks (wired in parallel)
-const int JACK_PINS[] = {A3, A4};
-const int NUM_JACKS = 2;
+// Input debouncing & multi-tap detection
+const uint32_t debounceDelayMs = 35;
+const uint32_t doubleTapWindowMs = 380;
 
-// Main Enclosure Pushbutton (SW2)
-const int MAIN_BUTTON_PIN = A2;
+// Alarm sequence: 3 beeps driven at the piezo's resonant frequency (3.1 kHz)
+const uint8_t maxAlarmBeeps = 3;
+const uint32_t alarmBeepDurationMs = 200;
+const uint16_t alarmResonantFreqHz = 3100;
 
-// Active Buzzer (BZ1)
-const int BUZZER_PIN = A1;
+// Turn-start sweep: 2 runs (LED1 -> LED5 -> LED1, 9 steps over ~0.5s)
+const uint8_t startSweepPattern[] = {0, 1, 2, 3, 4, 3, 2, 1, 0};
+const uint8_t numSweepSteps = sizeof(startSweepPattern);
+const uint32_t sweepStepIntervalMs = 55; // 9 * 55ms = 495ms
 
-// 5 LEDs (LED1: 10, LED2: 11, LED3: 12 [center], LED4: 13, LED5: A0)
-const int LED_PINS[] = {10, 11, 12, 13, A0};
-const int NUM_LEDS = 5;
+// Turn-start tone: Warm ~450 Hz "boooop" (1111 µs half-period) over 120 ms
+const uint32_t startToneDurationMs = 120;
+const uint32_t toneToggleHalfPeriodUs = 1111;
 
-// ==========================================
-// STATE MACHINE & TIMING VARIABLES
-// ==========================================
-enum TimerState { IDLE, RUNNING, ALARM, START_ALERT, SLEEP_SWEEP, SLEEPING };
-TimerState currentState = IDLE;
-
-unsigned long totalTimerDurationMs = 60000UL;
-unsigned long timeRemainingMs = 60000UL;
-unsigned long lastUpdateMillis = 0;
-unsigned long lastBeepMillis = 0;
-
-// Alarm Beeper Logic (3 Beeps via DC pulse)
-int beepCount = 0;
-bool beepActive = false;
-const int MAX_BEEPS = 3;
-const unsigned long BEEP_DURATION_MS = 200;
-
-// Start Turn Alert Logic (3 flashes + 1 low-volume click/beep)
-int alertToggleCount = 0;
-unsigned long lastAlertMillis = 0;
-const unsigned long ALERT_HALF_PERIOD_MS = 80;
-const unsigned long PLEASANT_BEEP_MS = 20; // Short DC pulse creates a pleasant low-volume click/beep
-
-// Double-Tap Sleep Sequence Tracking
-int sweepStep = 0;
-unsigned long lastSweepMillis = 0;
-const unsigned long SWEEP_STEP_MS = 140;
-
-// Sleep Pulse (PWM Breathing on Pin 10)
-unsigned long lastPulseMillis = 0;
-int pulseBrightness = 0;
-int pulseDirection = 3;
-
-// Unified Debounce & Double-Tap Tracking
-const unsigned long DEBOUNCE_DELAY = 35;       // Fast enough for snappy double clicks
-const unsigned long DOUBLE_TAP_WINDOW = 380;    // Accommodates external button cable capacitance
-
-bool lastRawMain = HIGH;
-bool stableMain = HIGH;
-unsigned long lastDebounceMain = 0;
-
-bool lastRawJack[NUM_JACKS] = {HIGH, HIGH};
-bool stableJack[NUM_JACKS] = {HIGH, HIGH};
-unsigned long lastDebounceJack[NUM_JACKS] = {0, 0};
-
-int clickCount = 0;
-unsigned long lastClickTime = 0;
+// Sleep animation (center-out sweep + hardware PWM breathing)
+const uint32_t sleepOutwardStepMs = 140;
+const uint32_t pulseUpdateIntervalMs = 20;
 
 // ==========================================
-// SETUP
+// STATE MACHINE & RUNTIME VARIABLES
+// ==========================================
+enum TimerState {
+  STATE_IDLE,
+  STATE_RUNNING,
+  STATE_ALARM,
+  STATE_START_ALERT,
+  STATE_SLEEP_SWEEP,
+  STATE_SLEEPING
+};
+
+TimerState currentState = STATE_IDLE;
+
+// Timing counters
+uint32_t totalDurationMs = 60000UL;
+uint32_t timeRemainingMs = 60000UL;
+uint32_t lastTimerUpdateMs = 0;
+
+// Alarm tracking
+uint32_t lastAlarmToggleMs = 0;
+uint8_t alarmBeepCount = 0;
+bool alarmBeepActive = false;
+
+// Turn-start animation tracking
+uint32_t startAlertBeginMs = 0;
+uint32_t lastSweepStepMs = 0;
+uint32_t lastToneToggleUs = 0;
+uint8_t currentSweepIndex = 0;
+bool tonePinState = false;
+
+// Sleep sequence tracking
+uint32_t lastSleepSweepMs = 0;
+uint32_t lastPulseUpdateMs = 0;
+uint8_t sleepSweepStep = 0;
+int16_t pulseBrightness = 0;
+int8_t pulseDirection = 4;
+
+// Button debounce tracking
+bool lastRawMainBtn = HIGH;
+bool stableMainBtn = HIGH;
+uint32_t lastMainDebounceMs = 0;
+
+bool lastRawJack[numJacks] = {HIGH, HIGH};
+bool stableJack[numJacks] = {HIGH, HIGH};
+uint32_t lastJackDebounceMs[numJacks] = {0, 0};
+
+uint8_t clickCount = 0;
+uint32_t lastClickTimeMs = 0;
+
+// ==========================================
+// FUNCTION DECLARATIONS
+// ==========================================
+void handleInputs();
+void updateTimer();
+void updateStartAlert();
+void updateSleepAnimation();
+void updateRunningLeds();
+void updateAlarm();
+void setAllLeds(uint8_t state);
+void resetPwmPins();
+void silenceBuzzer();
+uint32_t readSelectedDuration();
+void triggerTurnStart();
+void triggerSleepSequence();
+
+// ==========================================
+// SETUP & MAIN LOOP
 // ==========================================
 void setup() {
-  for (int i = 0; i < NUM_ROTARY_POSITIONS; i++) {
-    pinMode(ROTARY_PINS[i], INPUT_PULLUP);
+  for (uint8_t i = 0; i < numRotaryPositions; i++) {
+    pinMode(rotaryPins[i], INPUT_PULLUP);
   }
 
-  for (int i = 0; i < NUM_JACKS; i++) {
-    pinMode(JACK_PINS[i], INPUT_PULLUP);
+  for (uint8_t i = 0; i < numJacks; i++) {
+    pinMode(jackPins[i], INPUT_PULLUP);
   }
 
-  pinMode(MAIN_BUTTON_PIN, INPUT_PULLUP);
-  pinMode(BUZZER_PIN, OUTPUT);
-  digitalWrite(BUZZER_PIN, LOW);
+  pinMode(mainButtonPin, INPUT_PULLUP);
+  pinMode(buzzerPin, OUTPUT);
+  silenceBuzzer();
 
-  for (int i = 0; i < NUM_LEDS; i++) {
-    pinMode(LED_PINS[i], OUTPUT);
-    digitalWrite(LED_PINS[i], LOW);
+  for (uint8_t i = 0; i < numLeds; i++) {
+    pinMode(ledPins[i], OUTPUT);
+    digitalWrite(ledPins[i], LOW);
   }
 
-  totalTimerDurationMs = readSelectedDuration();
-  timeRemainingMs = totalTimerDurationMs;
+  totalDurationMs = readSelectedDuration();
+  timeRemainingMs = totalDurationMs;
 }
 
-// ==========================================
-// MAIN LOOP
-// ==========================================
 void loop() {
   handleInputs();
   updateTimer();
-  updateAlertAnimation();
+  updateStartAlert();
   updateSleepAnimation();
-  updateLEDs();
+  updateRunningLeds();
   updateAlarm();
 }
 
 // ==========================================
-// ROTARY SWITCH HELPER
+// HELPER UTILITIES
 // ==========================================
-unsigned long readSelectedDuration() {
-  for (int i = 0; i < NUM_ROTARY_POSITIONS; i++) {
-    if (digitalRead(ROTARY_PINS[i]) == LOW) {
-      return DURATION_PRESETS_MS[i];
+void setAllLeds(uint8_t state) {
+  for (uint8_t i = 0; i < numLeds; i++) {
+    digitalWrite(ledPins[i], state);
+  }
+}
+
+void resetPwmPins() {
+  analogWrite(ledPins[0], 0);
+  analogWrite(ledPins[1], 0);
+}
+
+void silenceBuzzer() {
+  noTone(buzzerPin);
+  digitalWrite(buzzerPin, LOW);
+  tonePinState = false;
+}
+
+uint32_t readSelectedDuration() {
+  for (uint8_t i = 0; i < numRotaryPositions; i++) {
+    if (digitalRead(rotaryPins[i]) == LOW) {
+      return durationPresetsMs[i];
     }
   }
-  return DURATION_PRESETS_MS[0];
+  return durationPresetsMs[0];
 }
 
 // ==========================================
-// TIMER CONTROL LOGIC
+// STATE TRIGGERS
 // ==========================================
 void triggerTurnStart() {
-  digitalWrite(BUZZER_PIN, HIGH); // Start subtle chirp
-  alertToggleCount = 0;
-  lastAlertMillis = millis();
+  startAlertBeginMs = millis();
+  lastSweepStepMs = startAlertBeginMs;
+  lastToneToggleUs = micros();
+  currentSweepIndex = 0;
 
-  for (int i = 0; i < NUM_LEDS; i++) {
-    digitalWrite(LED_PINS[i], HIGH);
-  }
+  resetPwmPins();
+  setAllLeds(LOW);
+  digitalWrite(ledPins[startSweepPattern[0]], HIGH);
 
-  currentState = START_ALERT;
+  currentState = STATE_START_ALERT;
 }
 
 void triggerSleepSequence() {
-  digitalWrite(BUZZER_PIN, LOW);
-  for (int i = 0; i < NUM_LEDS; i++) {
-    digitalWrite(LED_PINS[i], LOW);
-  }
+  silenceBuzzer();
+  resetPwmPins();
+  setAllLeds(LOW);
 
-  sweepStep = 0;
-  lastSweepMillis = millis();
-  currentState = SLEEP_SWEEP;
+  sleepSweepStep = 0;
+  lastSleepSweepMs = millis();
+  currentState = STATE_SLEEP_SWEEP;
 }
 
 // ==========================================
-// UNIFIED BUTTON & JACK INPUT HANDLER
+// INPUT HANDLING & DEBOUNCE
 // ==========================================
 void handleInputs() {
-  unsigned long now = millis();
-  bool buttonJustPressed = false;
+  const uint32_t now = millis();
+  bool pressDetected = false;
 
-  // 1. Read Main Button
-  bool readingMain = digitalRead(MAIN_BUTTON_PIN);
-  if (readingMain != lastRawMain) {
-    lastDebounceMain = now;
+  // 1. Debounce Main Pushbutton
+  bool rawMain = digitalRead(mainButtonPin);
+  if (rawMain != lastRawMainBtn) {
+    lastMainDebounceMs = now;
   }
-  lastRawMain = readingMain;
+  lastRawMainBtn = rawMain;
 
-  if ((now - lastDebounceMain) > DEBOUNCE_DELAY) {
-    if (readingMain != stableMain) {
-      stableMain = readingMain;
-      if (stableMain == LOW) {
-        buttonJustPressed = true;
+  if ((now - lastMainDebounceMs) > debounceDelayMs) {
+    if (rawMain != stableMainBtn) {
+      stableMainBtn = rawMain;
+      if (stableMainBtn == LOW) {
+        pressDetected = true;
       }
     }
   }
 
-  // 2. Read Player Audio Jacks
-  for (int i = 0; i < NUM_JACKS; i++) {
-    bool readingJack = digitalRead(JACK_PINS[i]);
-    if (readingJack != lastRawJack[i]) {
-      lastDebounceJack[i] = now;
+  // 2. Debounce External Player Jacks
+  for (uint8_t i = 0; i < numJacks; i++) {
+    bool rawJack = digitalRead(jackPins[i]);
+    if (rawJack != lastRawJack[i]) {
+      lastJackDebounceMs[i] = now;
     }
-    lastRawJack[i] = readingJack;
+    lastRawJack[i] = rawJack;
 
-    if ((now - lastDebounceJack[i]) > DEBOUNCE_DELAY) {
-      if (readingJack != stableJack[i]) {
-        stableJack[i] = readingJack;
+    if ((now - lastJackDebounceMs[i]) > debounceDelayMs) {
+      if (rawJack != stableJack[i]) {
+        stableJack[i] = rawJack;
         if (stableJack[i] == LOW) {
-          buttonJustPressed = true;
+          pressDetected = true;
         }
       }
     }
   }
 
-  // 3. Evaluate Single vs Double Tap
-  if (buttonJustPressed) {
+  // 3. Multi-tap Resolution
+  if (pressDetected) {
     clickCount++;
-    lastClickTime = now;
+    lastClickTimeMs = now;
 
     if (clickCount >= 2) {
       clickCount = 0;
@@ -208,88 +260,100 @@ void handleInputs() {
     }
   }
 
-  if (clickCount == 1 && (now - lastClickTime > DOUBLE_TAP_WINDOW)) {
+  if (clickCount == 1 && (now - lastClickTimeMs > doubleTapWindowMs)) {
     clickCount = 0;
     triggerTurnStart();
   }
 }
 
 // ==========================================
-// START-OF-TURN ALERT SEQUENCE
+// ALERT, SLEEP, AND ALARM LOGIC
 // ==========================================
-void updateAlertAnimation() {
-  if (currentState != START_ALERT) return;
-
-  unsigned long currentMillis = millis();
-
-  // Silence buzzer after the brief pulse
-  if (currentMillis - lastAlertMillis >= PLEASANT_BEEP_MS) {
-    digitalWrite(BUZZER_PIN, LOW);
+void updateStartAlert() {
+  if (currentState != STATE_START_ALERT) {
+    return;
   }
 
-  // 3 flashes = 6 edge transitions (ON/OFF x 3)
-  if (currentMillis - lastAlertMillis >= ALERT_HALF_PERIOD_MS) {
-    lastAlertMillis = currentMillis;
-    alertToggleCount++;
+  const uint32_t nowMs = millis();
+  const uint32_t toneElapsedMs = nowMs - startAlertBeginMs;
 
-    if (alertToggleCount >= 6) {
-      // Flashes complete: begin active countdown
-      digitalWrite(BUZZER_PIN, LOW);
-      totalTimerDurationMs = readSelectedDuration();
-      timeRemainingMs = totalTimerDurationMs;
-      lastUpdateMillis = millis();
-      currentState = RUNNING;
+  // Clean ~450 Hz "boooop" on passive piezo with soft envelope
+  if (toneElapsedMs < startToneDurationMs) {
+    const uint32_t nowUs = micros();
+    if (nowUs - lastToneToggleUs >= toneToggleHalfPeriodUs) {
+      lastToneToggleUs = nowUs;
+      tonePinState = !tonePinState;
+
+      bool allowPulse = true;
+      if (toneElapsedMs < 20) {
+        // Soft attack ramp
+        allowPulse = (toneElapsedMs % 8 < 4);
+      } else if (toneElapsedMs > (startToneDurationMs - 25)) {
+        // Soft decay tail
+        allowPulse = (toneElapsedMs % 8 < 3);
+      }
+
+      digitalWrite(buzzerPin, (tonePinState && allowPulse) ? HIGH : LOW);
+    }
+  } else {
+    silenceBuzzer();
+  }
+
+  // 2-run sweep animation (LED1 -> LED5 -> LED1)
+  if (nowMs - lastSweepStepMs >= sweepStepIntervalMs) {
+    lastSweepStepMs = nowMs;
+    currentSweepIndex++;
+
+    if (currentSweepIndex >= numSweepSteps) {
+      silenceBuzzer();
+      setAllLeds(LOW);
+
+      totalDurationMs = readSelectedDuration();
+      timeRemainingMs = totalDurationMs;
+      lastTimerUpdateMs = millis();
+      currentState = STATE_RUNNING;
       return;
     }
 
-    bool flashState = (alertToggleCount % 2 == 0);
-    for (int i = 0; i < NUM_LEDS; i++) {
-      digitalWrite(LED_PINS[i], flashState ? HIGH : LOW);
+    const uint8_t activeLed = startSweepPattern[currentSweepIndex];
+    for (uint8_t i = 0; i < numLeds; i++) {
+      digitalWrite(ledPins[i], (i == activeLed) ? HIGH : LOW);
     }
   }
 }
 
-// ==========================================
-// SLEEP ANIMATION (SWEEP OUTWARD & BREATHE)
-// ==========================================
 void updateSleepAnimation() {
-  unsigned long currentMillis = millis();
+  const uint32_t nowMs = millis();
 
-  // Phase 1: Center-out wave
-  if (currentState == SLEEP_SWEEP) {
-    if (currentMillis - lastSweepMillis >= SWEEP_STEP_MS) {
-      lastSweepMillis = currentMillis;
-      sweepStep++;
+  // Phase 1: Center-out sweep
+  if (currentState == STATE_SLEEP_SWEEP) {
+    if (nowMs - lastSleepSweepMs >= sleepOutwardStepMs) {
+      lastSleepSweepMs = nowMs;
+      sleepSweepStep++;
 
-      // Clear all LEDs
-      for (int i = 0; i < NUM_LEDS; i++) digitalWrite(LED_PINS[i], LOW);
+      setAllLeds(LOW);
 
-      if (sweepStep == 1) {
-        // Center: LED 3 (pin 12)
-        digitalWrite(LED_PINS[2], HIGH);
-      } else if (sweepStep == 2) {
-        // Inner Ring: LED 2 (pin 11) and LED 4 (pin 13)
-        digitalWrite(LED_PINS[1], HIGH);
-        digitalWrite(LED_PINS[3], HIGH);
-      } else if (sweepStep == 3) {
-        // Outer Ring: LED 1 (pin 10) and LED 5 (pin A0)
-        digitalWrite(LED_PINS[0], HIGH);
-        digitalWrite(LED_PINS[4], HIGH);
+      if (sleepSweepStep == 1) {
+        digitalWrite(ledPins[2], HIGH); // Center LED3
+      } else if (sleepSweepStep == 2) {
+        digitalWrite(ledPins[1], HIGH); // LED2 & LED4
+        digitalWrite(ledPins[3], HIGH);
+      } else if (sleepSweepStep == 3) {
+        digitalWrite(ledPins[0], HIGH); // LED1 & LED5
+        digitalWrite(ledPins[4], HIGH);
       } else {
-        // Sweep finished -> Enter continuous pulsing sleep
-        for (int i = 0; i < NUM_LEDS; i++) digitalWrite(LED_PINS[i], LOW);
         pulseBrightness = 0;
-        pulseDirection = 3;
-        currentState = SLEEPING;
+        pulseDirection = 4;
+        currentState = STATE_SLEEPING;
       }
     }
     return;
   }
 
-  // Phase 2: Pulse pin 10 to indicate sleeping
-  if (currentState == SLEEPING) {
-    if (currentMillis - lastPulseMillis >= 20) {
-      lastPulseMillis = currentMillis;
+  // Phase 2: Hardware PWM breathing on LED1 (D10) and LED2 (D11) in antiphase
+  if (currentState == STATE_SLEEPING) {
+    if (nowMs - lastPulseUpdateMs >= pulseUpdateIntervalMs) {
+      lastPulseUpdateMs = nowMs;
 
       pulseBrightness += pulseDirection;
       if (pulseBrightness >= 255) {
@@ -300,93 +364,82 @@ void updateSleepAnimation() {
         pulseDirection = -pulseDirection;
       }
 
-      // Pin 10 has native PWM support on the Uno/Nano
-      analogWrite(LED_PINS[0], pulseBrightness);
+      analogWrite(ledPins[0], pulseBrightness);
+      analogWrite(ledPins[1], 255 - pulseBrightness);
     }
   }
 }
 
-// ==========================================
-// TIMER COUNTDOWN LOGIC
-// ==========================================
 void updateTimer() {
-  if (currentState != RUNNING) return;
-
-  unsigned long currentMillis = millis();
-  unsigned long elapsed = currentMillis - lastUpdateMillis;
-  lastUpdateMillis = currentMillis;
-
-  if (elapsed >= timeRemainingMs) {
-    timeRemainingMs = 0;
-    currentState = ALARM;
-    beepCount = 0;
-    beepActive = false;
-    lastBeepMillis = currentMillis;
-  } else {
-    timeRemainingMs -= elapsed;
-  }
-}
-
-// ==========================================
-// 5-STAGE PROGRESS & BLINK LOGIC
-// ==========================================
-void updateLEDs() {
-  // Handled by specialized routines
-  if (currentState == START_ALERT || currentState == SLEEP_SWEEP || currentState == SLEEPING) {
+  if (currentState != STATE_RUNNING) {
     return;
   }
 
-  if (currentState == IDLE || currentState == ALARM) {
-    for (int i = 0; i < NUM_LEDS; i++) {
-      digitalWrite(LED_PINS[i], LOW);
+  const uint32_t nowMs = millis();
+  const uint32_t elapsedMs = nowMs - lastTimerUpdateMs;
+  lastTimerUpdateMs = nowMs;
+
+  if (elapsedMs >= timeRemainingMs) {
+    timeRemainingMs = 0;
+    currentState = STATE_ALARM;
+    alarmBeepCount = 0;
+    alarmBeepActive = false;
+    lastAlarmToggleMs = nowMs;
+  } else {
+    timeRemainingMs -= elapsedMs;
+  }
+}
+
+void updateRunningLeds() {
+  if (currentState != STATE_RUNNING) {
+    if (currentState == STATE_IDLE || currentState == STATE_ALARM) {
+      setAllLeds(LOW);
     }
     return;
   }
 
-  unsigned long elapsedMs = totalTimerDurationMs - timeRemainingMs;
-  unsigned long stageDurationMs = totalTimerDurationMs / 5;
+  const uint32_t elapsedMs = totalDurationMs - timeRemainingMs;
+  const uint32_t stageDurationMs = totalDurationMs / numLeds;
+  uint8_t activeStage = elapsedMs / stageDurationMs;
 
-  for (int i = 0; i < NUM_LEDS; i++) {
-    digitalWrite(LED_PINS[i], LOW);
+  if (activeStage >= numLeds) {
+    activeStage = numLeds - 1;
   }
 
-  if (elapsedMs < stageDurationMs * 1) {
-    digitalWrite(LED_PINS[0], HIGH);
-  } else if (elapsedMs < stageDurationMs * 2) {
-    digitalWrite(LED_PINS[1], HIGH);
-  } else if (elapsedMs < stageDurationMs * 3) {
-    digitalWrite(LED_PINS[2], HIGH);
-  } else if (elapsedMs < stageDurationMs * 4) {
-    digitalWrite(LED_PINS[3], HIGH);
-  } else if (elapsedMs < (totalTimerDurationMs - (stageDurationMs / 2))) {
-    digitalWrite(LED_PINS[4], HIGH);
+  setAllLeds(LOW);
+
+  // During the final half of the last segment (last 10%), blink LED5
+  const uint32_t finalThresholdMs = totalDurationMs - (stageDurationMs / 2);
+  if (elapsedMs >= finalThresholdMs) {
+    bool blink = (millis() / 250) % 2 == 0;
+    digitalWrite(ledPins[4], blink ? HIGH : LOW);
   } else {
-    bool blinkState = (millis() / 250) % 2 == 0;
-    digitalWrite(LED_PINS[4], blinkState ? HIGH : LOW);
+    digitalWrite(ledPins[activeStage], HIGH);
   }
 }
 
-// ==========================================
-// ALARM SOUND LOGIC (Active DC Buzzer)
-// ==========================================
 void updateAlarm() {
-  if (currentState != ALARM) return;
-
-  if (beepCount >= MAX_BEEPS) {
-    digitalWrite(BUZZER_PIN, LOW);
+  if (currentState != STATE_ALARM) {
     return;
   }
 
-  unsigned long currentMillis = millis();
-  if (currentMillis - lastBeepMillis >= BEEP_DURATION_MS) {
-    lastBeepMillis = currentMillis;
-    beepActive = !beepActive;
+  if (alarmBeepCount >= maxAlarmBeeps) {
+    silenceBuzzer();
+    return;
+  }
 
-    if (beepActive) {
-      digitalWrite(BUZZER_PIN, HIGH);
+  const uint32_t nowMs = millis();
+  if (nowMs - lastAlarmToggleMs >= alarmBeepDurationMs) {
+    lastAlarmToggleMs = nowMs;
+    alarmBeepActive = !alarmBeepActive;
+
+    if (alarmBeepActive) {
+      // Passive piezo sounder driven at resonant peak for maximum volume
+      tone(buzzerPin, alarmResonantFreqHz);
     } else {
-      digitalWrite(BUZZER_PIN, LOW);
-      beepCount++;
+      noTone(buzzerPin);
+      digitalWrite(buzzerPin, LOW);
+      alarmBeepCount++;
     }
   }
 }
