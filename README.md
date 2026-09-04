@@ -20,7 +20,7 @@ Everyone has the same time for each turn. The timer resets to that time after ev
 1. LEDs indicate the remaining duration in t/6 chunks. LED 1 lights for the first 1/6 of a turn, LED 2 lights for the second 1/6, and so on. LED 5 lights for the fifth chunk and then flashes for the final chunk.
 
 ## Details
-* Wiring schematic: ![](schematic/timer_schematic.png)
+* Wiring schematic: ![](schematics/timer_schematic.png)
 * TS jacks are used to hook up external buttons and are not really needed.
   
 ## Components
